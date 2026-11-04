@@ -28,6 +28,8 @@
 
 支持的 schema 关键字只有：`type` / `properties` / `required` / `additionalProperties` / `items` / `enum` / `const` / `oneOf`，根必须是 object。
 
+> 这些 `.js` 是 **workflow 工具的脚本体**：允许顶层 `await` / `return`，由工具在 async 函数里执行；它们不是普通 Node 模块，直接 `node --check` 会报语法错，属正常现象。
+
 ## 模板文件
 
 - `fanout-audit.js` — 并行审计 + 对发现做对抗复核的标准两段式。

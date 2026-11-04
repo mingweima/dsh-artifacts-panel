@@ -27,6 +27,8 @@
 4. Lead 会自己判断：小任务直接做；需要并行/独立验收才开队友、建任务板。你可以随时插话改范围。
 5. 交付格式固定：**结论 → 改动 → 验证证据（命令 + 退出码）→ 风险/未决**。
 
+> 上面派活示例里的 `projects/demo/` 是假设路径；实际项目放 `projects/` 下自建即可。
+
 > 想固定成「长期团队」：把一个长期项目的会话当作 HQ，持续在同一个任务板上加任务；队友和任务板在该会话内 durable，可冷恢复。
 
 ## 团队怎么工作
@@ -64,6 +66,8 @@ SuperDick/
 - 或让一个开了插件管理工具的会话调用 `plugin_manager`：`action: install_bundle`，`target: /Users/mingweima/Documents/SuperDick/super-preset`。
 
 装好后 `plugin_manager` `list_plugins` 里应能看到 `preset-super` 行且无激活诊断；新会话即可选到 `Super Agent`。**已存在的会话保留旧组合**，要新会话才生效。
+
+> 如果新会话的预设选择器里暂时看不到 `Super Agent`：重启一次 DSH（或重新安装 bundle），再新建会话。
 
 ### 改团队规则 / 角色
 
