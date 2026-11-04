@@ -1,0 +1,12 @@
+{
+  "name": "@local/dsh-super-agent-preset",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Super Agent preset for this workspace: a lead agent that runs a durable teammate team",
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  }
+}
