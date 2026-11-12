@@ -7,6 +7,12 @@ window.__ModuleLoader__.load({
     const STORAGE_PREFIX = 'dsh-artifacts-panel:v1:'
     const POLL_INTERVAL = 3000
     const GROUPS_PAGE = 30
+    // 内容列：两侧各留 24px，最宽 1040px，再居中。窗口 ≥1400px 时卡片仍占满
+    // 1040px 的整列，不再像旧的三列自适应网格那样只占左侧三分之一。
+    const CONTENT_MAX_WIDTH = 1040
+    const CONTENT_GUTTER = 48
+    // 收起态的最终回复固定按整行裁切，不用渐隐遮罩；展开按钮常驻卡片头部右侧。
+    const REPLY_CLAMP_LINES = 6
     const SIDEBAR_TAB_ID = 'dsh-artifacts-panel/sidebar'
     const SIDEBAR_KIND = 'artifacts'
     // The Host serves the cross-session index over same-origin HTTP routes
@@ -610,6 +616,21 @@ window.__ModuleLoader__.load({
       'filter.clear': '清除全部筛选',
       'filter.activeCount': '{count} 项',
       'stats.filtered': '已筛选 {count} 项',
+      'hidden.heading': '被噪音规则隐藏的内容',
+      'hidden.note': '这些轮次只是被显示规则藏起来了，会话记录与收藏不受影响。',
+      'hidden.group.short': '短回复阈值',
+      'hidden.group.keyword': '关键字过滤',
+      'hidden.group.noArtifacts': '无产物轮次',
+      'hidden.restore': '恢复显示',
+      'hidden.restored': '已恢复第 {n} 轮',
+      'hidden.why.turn': '第 {n} 轮',
+      'hidden.why.short': '回复 {length} 字，低于阈值 {threshold}',
+      'hidden.why.keyword': '命中关键词「{keyword}」',
+      'hidden.why.noArtifacts': '本轮没有可收录的产物',
+      'hidden.noReply': '（无回复文本）',
+      'hidden.clear': '清除全部筛选',
+      'hidden.empty': '当前没有被隐藏的内容',
+      'hidden.open': '查看被隐藏的内容',
       'more.menu': '更多面板操作',
       'more.settings': '打开设置面板',
       'card.open': '打开 {name}',
@@ -668,6 +689,21 @@ window.__ModuleLoader__.load({
       'filter.clear': 'Clear all filters',
       'filter.activeCount': '{count} active',
       'stats.filtered': '{count} filters active',
+      'hidden.heading': 'Hidden by noise filters',
+      'hidden.note': 'These turns are hidden by display rules only; the session records and stars are unchanged.',
+      'hidden.group.short': 'Short reply threshold',
+      'hidden.group.keyword': 'Keyword filter',
+      'hidden.group.noArtifacts': 'Turns without artifacts',
+      'hidden.restore': 'Show',
+      'hidden.restored': 'Turn {n} restored',
+      'hidden.why.turn': 'Turn {n}',
+      'hidden.why.short': 'Reply is {length} characters, below the {threshold}-character threshold',
+      'hidden.why.keyword': 'Matched keyword “{keyword}”',
+      'hidden.why.noArtifacts': 'No collectable artifact in this turn',
+      'hidden.noReply': '(no reply text)',
+      'hidden.clear': 'Clear all filters',
+      'hidden.empty': 'Nothing is hidden right now',
+      'hidden.open': 'See what is hidden',
       'more.menu': 'More panel actions',
       'more.settings': 'Open the settings panel',
       'card.open': 'Open {name}',
@@ -2216,6 +2252,54 @@ window.__ModuleLoader__.load({
       return settings.showFiles
     }
 
+    // 内容列宽度公式与 CSS 的 max-width:min(calc(100% - 48px),1040px) 保持一致，
+    // 由 tools/render-harness.cjs 直接断言，避免样式和几何计算各说各话。
+    function contentColumnWidth(available) {
+      const width = Number(available)
+      if (!Number.isFinite(width) || width <= 0) return 0
+      return Math.max(0, Math.min(width - CONTENT_GUTTER, CONTENT_MAX_WIDTH))
+    }
+
+    // 说明弹层里的单条摘要：取第一行有效文本，去掉 Markdown 记号，最多 20 个
+    // 字符（按 Unicode 码点计，中文不会被切成半个字）。
+    function hiddenSnippet(text, limit) {
+      const max = Number.isFinite(limit) && limit > 0 ? Math.floor(limit) : 20
+      const firstLine = String(text || '')
+        .replace(/\r/g, '')
+        .split('\n')
+        .map(function (line) { return line.trim() })
+        .filter(function (line) { return line !== '' })[0] || ''
+      const plain = firstLine
+        .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
+        .replace(/^#{1,6}\s+/, '')
+        .replace(/[`*_~#>|]/g, '')
+        .replace(/\s+/g, ' ')
+        .trim()
+      const chars = Array.from(plain)
+      return chars.length > max ? chars.slice(0, max).join('') + '…' : plain
+    }
+
+    // 一个轮次只归入「最具体」的一条噪音规则，供说明弹层分组：显式关键字
+    // 命中优先于短回复，短回复优先于泛化的「无产物」。三条规则同时打开时也
+    // 能各列一组；实际是否隐藏仍是三条的并集。
+    function noiseReasonForTurn(turn, settings, keywordList) {
+      const state = settings || DEFAULT_SETTINGS
+      const replyText = turn && typeof turn.reply === 'string' ? turn.reply : ''
+      const files = turn && Array.isArray(turn.files) ? turn.files : []
+      const hasArtifact = files.some(function (file) { return kindEnabled(file.kind, state) })
+      if (keywordList.length > 0 && replyText) {
+        const lower = replyText.toLowerCase()
+        for (const keyword of keywordList) {
+          if (lower.indexOf(keyword) !== -1) return { reason: 'keyword', keyword: keyword }
+        }
+      }
+      if (state.hideShortReplies && !hasArtifact && replyText.trim().length < state.shortReplyThreshold) {
+        return { reason: 'shortReply' }
+      }
+      if (state.hideTurnsWithoutArtifacts && !hasArtifact) return { reason: 'noArtifacts' }
+      return null
+    }
+
     // Pure turn selection, shared by the live view and tools/render-harness.cjs.
     // Files are only collected from three sources (deliverables/presented,
     // successful write/edit meta.path and workspace/changes), so a turn may
@@ -2230,23 +2314,13 @@ window.__ModuleLoader__.load({
       const showHidden = opts.showHidden === true
       const showAllTurns = opts.showAllTurns === true
       const hiddenSet = opts.hiddenSet instanceof Set ? opts.hiddenSet : new Set()
+      const revealedTurns = opts.revealedTurns instanceof Set ? opts.revealedTurns : new Set()
       const keywordList = Array.isArray(opts.keywordList) ? opts.keywordList : parseKeywords(merged.ignoreKeywords)
       const result = []
       for (const turn of Array.isArray(turns) ? turns : []) {
         const replyText = turn.reply || ''
-        const hasArtifact = turn.files.some(function (file) { return kindEnabled(file.kind, merged) })
-        if (!showAllTurns) {
-          if (merged.hideTurnsWithoutArtifacts && !hasArtifact) continue
-          if (merged.hideShortReplies && !hasArtifact && replyText.trim().length < merged.shortReplyThreshold) continue
-          if (keywordList.length > 0 && replyText) {
-            const lower = replyText.toLowerCase()
-            let hit = false
-            for (const keyword of keywordList) {
-              if (lower.indexOf(keyword) !== -1) { hit = true; break }
-            }
-            if (hit) continue
-          }
-        }
+        // 单条「恢复显示」优先于所有噪音规则：恢复后即使规则还开着，这一轮也留下。
+        if (!showAllTurns && !revealedTurns.has(turn.turn) && noiseReasonForTurn(turn, merged, keywordList)) continue
         const files = turn.files.filter(function (file) {
           if (!kindEnabled(file.kind, merged)) return false
           if (!showHidden && hiddenSet.has(file.path)) return false
@@ -2278,23 +2352,56 @@ window.__ModuleLoader__.load({
       return result
     }
 
-    function densityVariables(density) {
-      if (density === 'compact') return { '--ap-line': '1.45', '--ap-turn-pad': '.85em', '--ap-reply-pad': '.65em', '--ap-card-pad': '.45em', '--ap-gap': '.4em' }
-      if (density === 'relaxed') return { '--ap-line': '1.85', '--ap-turn-pad': '1.8em', '--ap-reply-pad': '1.1em', '--ap-card-pad': '.85em', '--ap-gap': '.75em' }
-      return { '--ap-line': '1.65', '--ap-turn-pad': '1.2em', '--ap-reply-pad': '.85em', '--ap-card-pad': '.6em', '--ap-gap': '.55em' }
+    // 「已筛选 N 项」的可解释数据源：按短回复 / 关键字 / 无产物分组返回真正被
+    // 噪音规则挡住的轮次。showAllTurns 或单条恢复后不再计入，N 归零后入口隐藏。
+    function collectHiddenTurns(turns, options) {
+      const opts = options || {}
+      const merged = Object.assign({}, DEFAULT_SETTINGS)
+      if (opts.settings && typeof opts.settings === 'object') Object.assign(merged, opts.settings)
+      const keywordList = Array.isArray(opts.keywordList) ? opts.keywordList : parseKeywords(merged.ignoreKeywords)
+      const revealedTurns = opts.revealedTurns instanceof Set ? opts.revealedTurns : new Set()
+      const groups = { shortReply: [], keyword: [], noArtifacts: [] }
+      if (opts.showAllTurns !== true) {
+        for (const turn of Array.isArray(turns) ? turns : []) {
+          if (revealedTurns.has(turn.turn)) continue
+          const noise = noiseReasonForTurn(turn, merged, keywordList)
+          if (!noise) continue
+          const replyText = typeof turn.reply === 'string' ? turn.reply : ''
+          groups[noise.reason].push({
+            turn: turn.turn,
+            reply: replyText,
+            snippet: hiddenSnippet(replyText, 20),
+            length: replyText.trim().length,
+            threshold: merged.shortReplyThreshold,
+            keyword: noise.keyword || '',
+          })
+        }
+      }
+      return {
+        groups: groups,
+        total: groups.shortReply.length + groups.keyword.length + groups.noArtifacts.length,
+      }
     }
 
-    // Two neutral palettes for the forced modes. Body text pairs were checked
-    // for WCAG AA (>= 4.5:1): dark text #e7eaf0 on #1a1d24 ≈ 14.0:1, muted
-    // #a9b2c0 ≈ 7.9:1, subtle #8f98a7 ≈ 5.8:1; light text #1b2130 on #ffffff
-    // ≈ 16.1:1, muted #495264 ≈ 7.9:1, subtle #5f6878 ≈ 5.6:1. State colors
-    // are re-mapped too so status chips stay readable on the forced surface.
+    function densityVariables(density) {
+      if (density === 'compact') return { '--ap-line': '1.45', '--ap-turn-pad': 'var(--ap-s3)', '--ap-reply-pad': 'var(--ap-s2)', '--ap-card-pad': 'var(--ap-s2) var(--ap-s3)', '--ap-gap': 'var(--ap-s2)' }
+      if (density === 'relaxed') return { '--ap-line': '1.85', '--ap-turn-pad': 'var(--ap-s6)', '--ap-reply-pad': 'var(--ap-s3)', '--ap-card-pad': 'var(--ap-s4) var(--ap-s6)', '--ap-gap': 'var(--ap-s3)' }
+      return { '--ap-line': '1.65', '--ap-turn-pad': 'var(--ap-s6)', '--ap-reply-pad': 'var(--ap-s3)', '--ap-card-pad': 'var(--ap-s3) var(--ap-s4)', '--ap-gap': 'var(--ap-s3)' }
+    }
+
+    // Two neutral palettes for the forced modes. WCAG AA pairs used by the
+    // panel: dark text #e7eaf0 on #1a1d24 ≈ 14.0:1, muted #b0b9c8 ≈ 8.5:1,
+    // subtle #98a2b2 ≈ 6.5:1; light text #1b2130 on #ffffff ≈ 16.1:1, muted
+    // #444d5e ≈ 8.5:1, subtle #596273 ≈ 6.1:1. Body copy therefore clears 7:1
+    // and secondary copy clears 4.5:1 on every forced surface (bg/surface/
+    // surface2/surface3); state colors are re-mapped too so status chips stay
+    // readable on the forced surface.
     const THEME_TOKENS = Object.freeze({
       dark: Object.freeze({
         bg: '#14161b', surface: '#1a1d24', surface2: '#20242d', surface3: '#282d38',
         overlay: '#20242d', skeleton: '#262b35',
         border: '#323844', borderStrong: '#414959',
-        text: '#e7eaf0', muted: '#a9b2c0', subtle: '#8f98a7',
+        text: '#e7eaf0', muted: '#b0b9c8', subtle: '#98a2b2',
         hover: 'rgba(255,255,255,.08)', link: '#86b9ff',
         danger: '#ff9090', dangerBorder: '#7d3b3b', warn: '#f0c674',
         success: '#7fd7a6', info: '#8fc5ff',
@@ -2304,7 +2411,7 @@ window.__ModuleLoader__.load({
         bg: '#f6f7f9', surface: '#ffffff', surface2: '#eef1f5', surface3: '#e3e7ee',
         overlay: '#ffffff', skeleton: '#e8ebf0',
         border: '#d7dbe3', borderStrong: '#c1c7d3',
-        text: '#1b2130', muted: '#495264', subtle: '#5f6878',
+        text: '#1b2130', muted: '#444d5e', subtle: '#596273',
         hover: 'rgba(20,30,50,.07)', link: '#1f5fbf',
         danger: '#b42318', dangerBorder: '#e2a29c', warn: '#8a5a00',
         success: '#177a42', info: '#1f5fbf',
@@ -2553,7 +2660,7 @@ window.__ModuleLoader__.load({
 
     //#region styles
     const CSS = [
-      '.ap-page{position:relative;height:100%;min-height:0;display:flex;flex-direction:column;background:var(--ap-bg, var(--dsw-alias-bg-base));color:var(--ap-text, var(--dsw-alias-label-primary));font-family:inherit;font-size:1em;line-height:var(--ap-line,1.7);-webkit-font-smoothing:antialiased}',
+      '.ap-page{--ap-s1:.25em;--ap-s2:.5em;--ap-s3:.75em;--ap-s4:1em;--ap-s6:1.5em;--ap-icon-gap:.4em;--ap-reply-clamp:6;position:relative;height:100%;min-height:0;display:flex;flex-direction:column;background:var(--ap-bg, var(--dsw-alias-bg-base));color:var(--ap-text, var(--dsw-alias-label-primary));font-family:inherit;font-size:1em;line-height:var(--ap-line,1.7);-webkit-font-smoothing:antialiased}',
       '.ap-page *,.ap-settings *{box-sizing:border-box}',
       '.ap-page svg{flex:none}',
       '.ap-btn svg,.ap-seg-btn svg,.ap-search-icon svg{width:1em;height:1em}',
@@ -2561,15 +2668,29 @@ window.__ModuleLoader__.load({
       '.ap-card-icon svg{width:1.1em;height:1.1em}',
       '.ap-state-icon svg{width:1.2em;height:1.2em}',
       '.ap-pinned-title svg{width:.9em;height:.9em}',
-      '.ap-head{flex:none;padding:1.1em 1.75em .75em;border-bottom:1px solid var(--ap-border, var(--dsw-alias-border-l1));background:var(--ap-bg, var(--dsw-alias-bg-base))}',
-      '.ap-head-inner,.ap-content{max-width:1040px;margin:0 auto}',
+      '.ap-head{position:relative;flex:none;padding:var(--ap-s4) 0 var(--ap-s3);border-bottom:1px solid var(--ap-border, var(--dsw-alias-border-l1));background:var(--ap-bg, var(--dsw-alias-bg-base))}',
+      '.ap-head-inner,.ap-content{width:100%;max-width:min(calc(100% - 48px),1040px);margin:0 auto}',
       '.ap-title-row{display:flex;align-items:flex-end;justify-content:space-between;gap:1em;flex-wrap:wrap}',
       '.ap-title{margin:0;font-size:1.35em;font-weight:650;letter-spacing:.01em;line-height:1.25;overflow-wrap:anywhere}',
       '.ap-sub{margin-top:.2em;font-size:max(11px,.85em);color:var(--ap-muted, var(--dsw-alias-label-secondary))}',
-      '.ap-stats{font-size:max(11px,.85em);color:var(--ap-subtle, var(--dsw-alias-label-tertiary));font-variant-numeric:tabular-nums;white-space:nowrap}',
-      '.ap-toolbar{display:flex;align-items:center;gap:.5em;flex-wrap:wrap;margin-top:.9em}',
+      '.ap-stats{display:flex;align-items:center;justify-content:flex-end;gap:var(--ap-s1);flex-wrap:wrap;font-size:max(11px,.85em);color:var(--ap-subtle, var(--dsw-alias-label-tertiary));font-variant-numeric:tabular-nums;white-space:nowrap}',
+      '.ap-hidden-wrap{position:relative;display:inline-flex;align-items:center}',
+      '.ap-hidden-btn{appearance:none;display:inline-flex;align-items:center;gap:var(--ap-s1);border:1px solid transparent;background:transparent;color:var(--ap-muted, var(--dsw-alias-label-secondary));font:inherit;font-size:inherit;line-height:1.5;padding:.05em .35em;border-radius:.35em;cursor:pointer;text-decoration:underline;text-decoration-style:dotted;text-underline-offset:2px;white-space:nowrap}',
+      '.ap-hidden-btn:hover{color:var(--ap-text, var(--dsw-alias-label-primary));background:var(--ap-hover, var(--dsw-alias-interactive-bg-hover));text-decoration-style:solid}',
+      '.ap-hidden-btn[aria-expanded="true"]{color:var(--ap-text, var(--dsw-alias-label-primary));background:var(--ap-hover, var(--dsw-alias-interactive-bg-hover));text-decoration-style:solid}',
+      '.ap-hidden-pop{right:0;min-width:21em;max-width:min(30em,calc(100vw - 2em));max-height:min(60vh,32em);overflow:auto}',
+      '.ap-hidden-group{padding:var(--ap-s1) 0 var(--ap-s2)}',
+      '.ap-hidden-group + .ap-hidden-group{border-top:1px solid var(--ap-border, var(--dsw-alias-border-l1))}',
+      '.ap-hidden-group-head{display:flex;align-items:center;justify-content:space-between;gap:var(--ap-s2);padding:var(--ap-s2) var(--ap-s2) var(--ap-s1);font-size:max(11px,.78em);font-weight:650;letter-spacing:.05em;text-transform:uppercase;color:var(--ap-subtle, var(--dsw-alias-label-tertiary))}',
+      '.ap-hidden-item{display:flex;align-items:flex-start;gap:var(--ap-s2);padding:var(--ap-s2);border-radius:.35em}',
+      '.ap-hidden-item:hover{background:var(--ap-hover, var(--dsw-alias-interactive-bg-hover))}',
+      '.ap-hidden-main{flex:1;min-width:0;display:flex;flex-direction:column;gap:.1em}',
+      '.ap-hidden-title{font-size:max(11px,.88em);line-height:1.5;color:var(--ap-text, var(--dsw-alias-label-primary));overflow-wrap:anywhere;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden}',
+      '.ap-hidden-why{font-size:max(11px,.78em);line-height:1.5;color:var(--ap-subtle, var(--dsw-alias-label-tertiary));overflow-wrap:anywhere}',
+      '.ap-hidden-restore{flex:none;white-space:nowrap}',
+      '.ap-toolbar{display:flex;align-items:center;gap:var(--ap-s2);flex-wrap:wrap;margin-top:var(--ap-s3)}',
       '.ap-seg{display:inline-flex;flex-wrap:wrap;max-width:100%;padding:.15em;border:1px solid var(--ap-border, var(--dsw-alias-border-l1));border-radius:.6em;background:var(--ap-surface, var(--dsw-alias-bg-layer-1))}',
-      '.ap-seg-btn{appearance:none;border:none;background:transparent;color:var(--ap-muted, var(--dsw-alias-label-secondary));font:inherit;font-size:.9em;line-height:1.1;min-height:2em;padding:.35em .7em;border-radius:.45em;cursor:pointer;display:inline-flex;align-items:center;gap:.45em;transition:background .12s ease,color .12s ease}',
+      '.ap-seg-btn{appearance:none;border:none;background:transparent;color:var(--ap-muted, var(--dsw-alias-label-secondary));font:inherit;font-size:.9em;line-height:1.1;min-height:2em;padding:.35em .7em;border-radius:.45em;cursor:pointer;display:inline-flex;align-items:center;gap:var(--ap-icon-gap);transition:background .12s ease,color .12s ease}',
       '.ap-seg-btn:hover{color:var(--ap-text, var(--dsw-alias-label-primary))}',
       '.ap-seg-btn[data-active="true"]{background:var(--ap-surface-3, var(--dsw-alias-bg-layer-3));color:var(--ap-text, var(--dsw-alias-label-primary));box-shadow:0 1px 2px rgba(0,0,0,.08)}',
       '.ap-seg-count{font-size:max(11px,.8em);color:var(--ap-subtle, var(--dsw-alias-label-tertiary));font-variant-numeric:tabular-nums}',
@@ -2579,18 +2700,19 @@ window.__ModuleLoader__.load({
       '.ap-search input:focus{border-color:var(--ap-accent, var(--dsw-alias-brand-primary))}',
       '.ap-search input::placeholder{color:var(--ap-subtle, var(--dsw-alias-label-tertiary))}',
       '.ap-search-icon{position:absolute;left:.7em;top:50%;transform:translateY(-50%);color:var(--ap-subtle, var(--dsw-alias-label-tertiary));pointer-events:none;display:flex}',
-      '.ap-btn{appearance:none;display:inline-flex;align-items:center;gap:.4em;height:2.35em;padding:0 .75em;border-radius:.5em;border:1px solid var(--ap-border, var(--dsw-alias-border-l1));background:var(--ap-surface, var(--dsw-alias-bg-layer-1));color:var(--ap-text, var(--dsw-alias-label-primary));font:inherit;font-size:.9em;cursor:pointer;white-space:nowrap;transition:background .12s ease,border-color .12s ease}',
+      '.ap-btn{appearance:none;display:inline-flex;align-items:center;gap:var(--ap-icon-gap);height:2.35em;padding:0 .75em;border-radius:.5em;border:1px solid var(--ap-border, var(--dsw-alias-border-l1));background:var(--ap-surface, var(--dsw-alias-bg-layer-1));color:var(--ap-text, var(--dsw-alias-label-primary));font:inherit;font-size:.9em;cursor:pointer;white-space:nowrap;transition:background .12s ease,border-color .12s ease}',
       '.ap-btn:hover:not(:disabled){background:var(--ap-surface-2, var(--dsw-alias-bg-layer-2));border-color:var(--ap-border-strong, var(--dsw-alias-border-l2))}',
       '.ap-btn:disabled{opacity:.5;cursor:default}',
-      '.ap-btn:focus-visible,.ap-seg-btn:focus-visible,.ap-card:focus-visible,.ap-iconbtn:focus-visible,.ap-linkbtn:focus-visible,.ap-settings-switch:focus-visible,.ap-settings-segbtn:focus-visible,.ap-settings-preset:focus-visible{outline:2px solid var(--ap-accent, var(--dsw-alias-brand-primary));outline-offset:2px}',
+      '.ap-btn:focus-visible,.ap-seg-btn:focus-visible,.ap-card:focus-visible,.ap-iconbtn:focus-visible,.ap-linkbtn:focus-visible,.ap-pop-row:focus-visible,.ap-card-path:focus-visible,.ap-hidden-btn:focus-visible,.ap-reply-toggle:focus-visible,.ap-settings-switch:focus-visible,.ap-settings-segbtn:focus-visible,.ap-settings-preset:focus-visible{outline:2px solid var(--ap-accent, var(--dsw-alias-brand-primary));outline-offset:2px}',
+      '.ap-tabmenu-item:focus-visible,.ap-menu-item:focus-visible,.ap-card-menu-item:focus-visible,.ap-sess-main:focus-visible,.ap-sess-chevron:focus-visible,.ap-ws-head:focus-visible{outline:2px solid var(--ap-accent, var(--dsw-alias-brand-primary));outline-offset:2px}',
       '.ap-btn[data-active="true"]{background:var(--ap-hover, var(--dsw-alias-interactive-bg-hover));border-color:var(--ap-border-strong, var(--dsw-alias-border-l2))}',
-      '.ap-body{flex:1;min-height:0;overflow:auto;padding:.4em 1.75em 4.5em;scrollbar-gutter:stable}',
+      '.ap-body{flex:1;min-height:0;overflow:auto;padding:var(--ap-s1) 0 var(--ap-s6);scrollbar-gutter:stable}',
       '.ap-pinned{border:1px solid var(--ap-border, var(--dsw-alias-border-l1));background:var(--ap-surface, var(--dsw-alias-bg-layer-1));border-radius:.75em;padding:.8em 1em .9em;margin:1em 0 .4em}',
       '.ap-pinned-title{display:flex;align-items:center;gap:.45em;font-size:max(11px,.85em);font-weight:650;letter-spacing:.07em;text-transform:uppercase;color:var(--ap-muted, var(--dsw-alias-label-secondary));margin-bottom:.6em}',
-      '.ap-turn{border-top:1px solid var(--ap-border, var(--dsw-alias-border-l1));padding:var(--ap-turn-pad,1.2em) 0 .65em}',
-      '.ap-pinned + .ap-turn{border-top:none;padding-top:.75em}',
-      '.ap-turn-head{display:flex;align-items:center;gap:.6em;flex-wrap:wrap;margin-bottom:.6em}',
-      '.ap-turn-no{font-size:1em;font-weight:650;overflow-wrap:anywhere}',
+      '.ap-turn{border-top:1px solid var(--ap-border, var(--dsw-alias-border-l1));padding:var(--ap-turn-pad,var(--ap-s6)) 0 var(--ap-s4)}',
+      '.ap-pinned + .ap-turn{border-top:none;padding-top:var(--ap-s3)}',
+      '.ap-turn-head{position:sticky;top:0;z-index:3;display:flex;align-items:center;gap:var(--ap-s2);flex-wrap:wrap;margin:0 0 var(--ap-s2);padding:var(--ap-s1) 0;background:var(--ap-bg, var(--dsw-alias-bg-base))}',
+      '.ap-turn-no{font-size:max(11px,.86em);font-weight:600;letter-spacing:.03em;color:var(--ap-muted, var(--dsw-alias-label-secondary));overflow-wrap:anywhere}',
       '.ap-turn-time{font-size:max(11px,.85em);color:var(--ap-subtle, var(--dsw-alias-label-tertiary));font-variant-numeric:tabular-nums}',
       '.ap-turn-meta{font-size:max(11px,.82em);color:var(--ap-subtle, var(--dsw-alias-label-tertiary));border:1px solid var(--ap-border, var(--dsw-alias-border-l1));border-radius:999px;padding:.08em .55em;line-height:1.5}',
       '.ap-turn-meta-error{color:var(--dsw-alias-state-error-primary);border-color:var(--dsw-alias-state-error-secondary)}',
@@ -2622,11 +2744,14 @@ window.__ModuleLoader__.load({
       '.ap-page-sidebar .ap-group-title{font-size:.95em}',
       '.ap-page-sidebar .ap-group-head{padding-bottom:.35em}',
       '.ap-page-sidebar .ap-group-body{padding-top:0}',
-      '.ap-reply{border:1px solid var(--ap-border, var(--dsw-alias-border-l1));background:var(--ap-surface, var(--dsw-alias-bg-layer-1));border-radius:.75em;padding:var(--ap-reply-pad,.85em) 1em;margin-bottom:var(--ap-gap,.55em)}',
-      '.ap-reply-head{display:flex;align-items:center;justify-content:space-between;gap:.5em;flex-wrap:wrap;margin-bottom:.35em}',
-      '.ap-reply-label{font-size:max(11px,.8em);font-weight:650;letter-spacing:.08em;text-transform:uppercase;color:var(--ap-subtle, var(--dsw-alias-label-tertiary))}',
+      '.ap-reply{border:1px solid var(--ap-border, var(--dsw-alias-border-l1));background:var(--ap-surface, var(--dsw-alias-bg-layer-1));border-radius:.75em;padding:var(--ap-reply-pad,var(--ap-s3)) var(--ap-s4);margin-bottom:var(--ap-gap,var(--ap-s3))}',
+      '.ap-reply-head{display:flex;align-items:center;justify-content:space-between;gap:var(--ap-s2);flex-wrap:nowrap;margin-bottom:var(--ap-s1)}',
+      '.ap-reply-label{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:max(11px,.8em);font-weight:650;letter-spacing:.08em;text-transform:uppercase;color:var(--ap-subtle, var(--dsw-alias-label-tertiary))}',
+      '.ap-reply-toggle{flex:none;min-width:4.6em;margin-left:auto;text-align:right;white-space:nowrap}',
       '.ap-reply-text{white-space:pre-wrap;overflow-wrap:anywhere;font-size:1em;line-height:var(--ap-line,1.7);color:var(--ap-text, var(--dsw-alias-label-primary))}',
-      '.ap-reply-text[data-clamped="true"]{max-height:14em;overflow:hidden;-webkit-mask-image:linear-gradient(180deg,#000 72%,transparent);mask-image:linear-gradient(180deg,#000 72%,transparent)}',
+      // 整行收起：6 行（--ap-reply-clamp）后直接截断，不再用渐隐遮罩，也不会切在
+      // 半行上。展开后属性变为 false，完全恢复自然高度。
+      '.ap-reply-text[data-clamped="true"]{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:var(--ap-reply-clamp,6);overflow:hidden}',
       // Markdown 正文按块排版，关掉纯文本的 pre-wrap；纯文本模式仍保留原样。
       '.ap-reply-text.ap-md{white-space:normal}',
       '.ap-md > :first-child{margin-top:0}',
@@ -2657,25 +2782,28 @@ window.__ModuleLoader__.load({
       '.ap-md .ap-md-th{background:var(--ap-surface-2, var(--dsw-alias-bg-layer-2));font-weight:650}',
       '.ap-md .ap-md-align-center{text-align:center}',
       '.ap-md .ap-md-align-right{text-align:right}',
-      '.ap-linkbtn{appearance:none;border:none;background:transparent;color:var(--ap-link, var(--dsw-alias-link));font:inherit;font-size:max(11px,.85em);padding:.1em .3em;border-radius:.3em;cursor:pointer}',
+      '.ap-linkbtn{appearance:none;border:none;background:transparent;color:var(--ap-link, var(--dsw-alias-link));font:inherit;font-size:max(11px,.85em);line-height:1.4;padding:.1em .3em;border-radius:.3em;cursor:pointer;display:inline-flex;align-items:center;gap:var(--ap-icon-gap);vertical-align:middle}',
       '.ap-linkbtn:hover{text-decoration:underline}',
-      '.ap-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(17em,1fr));gap:var(--ap-gap,.55em)}',
-      '.ap-card{position:relative;display:flex;align-items:flex-start;gap:.65em;min-width:0;border:1px solid var(--ap-border, var(--dsw-alias-border-l1));background:var(--ap-surface, var(--dsw-alias-bg-layer-1));border-radius:.65em;padding:var(--ap-card-pad,.6em) .75em;transition:border-color .12s ease,background .12s ease}',
+      // 单列铺满内容列：一张卡片也占满 1040px，不再被 auto-fill 网格压成
+      // 左三分之一。卡片内部是「图标 / 正文 / 元信息 / 操作」四栏网格，
+      // 正文自身限读 72ch，宽屏下不会拉成极长一行，也不会缩成细长条。
+      '.ap-grid{display:grid;grid-template-columns:minmax(0,1fr);gap:var(--ap-gap,var(--ap-s3))}',
+      '.ap-card{position:relative;display:grid;grid-template-columns:auto minmax(0,1fr) auto auto;grid-template-areas:"icon main meta actions";align-items:start;gap:var(--ap-s3);min-width:0;border:1px solid var(--ap-border, var(--dsw-alias-border-l1));background:var(--ap-surface, var(--dsw-alias-bg-layer-1));border-radius:.65em;padding:var(--ap-card-pad,var(--ap-s3) var(--ap-s4));transition:border-color .12s ease,background .12s ease}',
       '.ap-card-hit{position:absolute;inset:0;z-index:0;width:100%;border:none;border-radius:inherit;background:transparent;padding:0;cursor:pointer}',
       '.ap-card-hit:focus-visible{outline:2px solid var(--ap-accent, var(--dsw-alias-brand-primary));outline-offset:-2px}',
       '.ap-card:hover{border-color:var(--ap-border-strong, var(--dsw-alias-border-l2));background:var(--ap-surface-2, var(--dsw-alias-bg-layer-2))}',
       '.ap-card[data-hidden="true"]{opacity:.72;filter:grayscale(.35)}',
-      '.ap-card-icon{position:relative;z-index:1;flex:none;width:2.2em;height:2.2em;border-radius:.5em;display:flex;align-items:center;justify-content:center;background:var(--ap-surface-3, var(--dsw-alias-bg-layer-3));color:var(--ap-muted, var(--dsw-alias-label-secondary));pointer-events:none}',
-      '.ap-card-main{position:relative;z-index:1;flex:1;min-width:0;padding-right:.15em;pointer-events:none}',
+      '.ap-card-icon{grid-area:icon;position:relative;z-index:1;flex:none;width:1.7em;height:1.7em;margin-top:-.2em;border-radius:.5em;display:flex;align-items:center;justify-content:center;background:var(--ap-surface-3, var(--dsw-alias-bg-layer-3));color:var(--ap-muted, var(--dsw-alias-label-secondary));pointer-events:none}',
+      '.ap-card-main{grid-area:main;position:relative;z-index:1;min-width:0;max-width:72ch;pointer-events:none}',
       '.ap-card-name{font-size:.95em;font-weight:550;line-height:1.35;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}',
-      '.ap-card-path{appearance:none;display:block;max-width:100%;border:none;background:transparent;padding:0;text-align:left;font:inherit;font-size:max(11px,.85em);line-height:1.4;color:var(--ap-subtle, var(--dsw-alias-label-tertiary));white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:.05em;pointer-events:auto;cursor:copy}',
+      '.ap-card-path{appearance:none;display:block;width:100%;max-width:100%;border:none;background:transparent;padding:0;text-align:left;font:inherit;font-size:max(11px,.85em);line-height:1.4;color:var(--ap-subtle, var(--dsw-alias-label-tertiary));white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:.05em;pointer-events:auto;cursor:copy}',
       '.ap-card-path:hover{color:var(--ap-accent, var(--dsw-alias-brand-primary));text-decoration:underline}',
-      '.ap-card-desc{display:block;max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:max(11px,.85em);color:var(--ap-subtle, var(--dsw-alias-label-tertiary))}',
-      '.ap-card-meta{display:flex;align-items:center;gap:.4em;flex-wrap:wrap;margin-top:.25em;font-size:max(11px,.85em);color:var(--ap-subtle, var(--dsw-alias-label-tertiary));font-variant-numeric:tabular-nums}',
+      '.ap-card-desc{display:block;max-width:72ch;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:max(11px,.85em);color:var(--ap-subtle, var(--dsw-alias-label-tertiary));margin-top:.05em}',
+      '.ap-card-meta{grid-area:meta;display:flex;align-items:center;justify-content:flex-end;gap:var(--ap-s1);flex-wrap:wrap;max-width:24em;font-size:max(11px,.85em);color:var(--ap-subtle, var(--dsw-alias-label-tertiary));font-variant-numeric:tabular-nums;pointer-events:none}',
       '.ap-chip{border:1px solid var(--ap-border, var(--dsw-alias-border-l1));border-radius:999px;padding:0 .45em;line-height:1.55}',
       '.ap-chip-accent{color:var(--dsw-alias-state-business-primary);border-color:var(--ap-border-strong, var(--dsw-alias-border-l2))}',
       '.ap-turn-no-artifacts{font-size:max(11px,.85em);color:var(--ap-subtle, var(--dsw-alias-label-tertiary));background:var(--ap-surface, var(--dsw-alias-bg-layer-1))}',
-      '.ap-card-actions{position:absolute;right:.3em;top:.3em;z-index:2;display:flex;align-items:center;gap:.05em;padding:.05em .05em .05em .65em;border-radius:.5em;background:linear-gradient(90deg,transparent,var(--ap-surface-2, var(--dsw-alias-bg-layer-2)) 32%);opacity:.4;transition:opacity .12s ease}',
+      '.ap-card-actions{grid-area:actions;align-self:start;margin-top:.1em;position:static;z-index:2;display:flex;align-items:center;gap:0;padding:0;background:none;opacity:.4;transition:opacity .12s ease}',
       '.ap-card:hover .ap-card-actions,.ap-card:focus-within .ap-card-actions{opacity:1}',
       '.ap-card-actions .ap-iconbtn{opacity:1}',
       '.ap-iconbtn{appearance:none;border:none;background:transparent;color:var(--ap-muted, var(--dsw-alias-label-secondary));width:1.7em;height:1.7em;border-radius:.4em;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;text-decoration:none}',
@@ -2690,7 +2818,8 @@ window.__ModuleLoader__.load({
       '.ap-error span{overflow-wrap:anywhere}',
       '.ap-skel{height:.8em;border-radius:.4em;background:var(--ap-skeleton, var(--dsw-alias-bg-skeleton));animation:ap-pulse 1.2s ease-in-out infinite}',
       '.ap-skel-card{height:5em;border-radius:.65em;background:var(--ap-surface, var(--dsw-alias-bg-layer-1));border:1px solid var(--ap-border, var(--dsw-alias-border-l1))}',
-      '.ap-skel-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(17em,1fr));gap:var(--ap-gap,.55em);margin-top:.8em}',
+      '.ap-skel-grid{display:grid;grid-template-columns:minmax(0,1fr);gap:var(--ap-gap,var(--ap-s3));margin-top:var(--ap-s3)}',
+      '.ap-skel-status{font-size:max(11px,.85em);color:var(--ap-subtle, var(--dsw-alias-label-tertiary));margin-top:var(--ap-s4)}',
       '.ap-skel-lines{display:flex;flex-direction:column;gap:.5em;margin-top:1.4em}',
       '.ap-loadmore{display:flex;justify-content:center;align-items:center;padding:1.4em .5em .4em}',
       '.ap-loadmore-done{font-size:max(11px,.85em);color:var(--ap-subtle, var(--dsw-alias-label-tertiary))}',
@@ -2698,33 +2827,38 @@ window.__ModuleLoader__.load({
       '.ap-spin{animation:ap-spin .9s linear infinite;transform-origin:12px 12px}',
       '@keyframes ap-spin{to{transform:rotate(360deg)}}',
       '@keyframes ap-pulse{0%,100%{opacity:.45}50%{opacity:.9}}',
-      '@media (hover:none){.ap-card-actions{opacity:1;position:static;background:none;padding:0}.ap-card{flex-wrap:wrap}.ap-card-main{flex-basis:calc(100% - 3.2em)}}',
-      '@media (max-width:720px){.ap-card-actions .ap-card-star{display:none}.ap-card-actions{opacity:1}}',
-      '@media (max-width:720px){.ap-head{padding:.9em 1em .65em}.ap-body{padding:.25em 1em 4em}.ap-sub{display:none}.ap-search{max-width:none}}',
-      '.ap-page-sidebar .ap-head{padding:.65em .7em .45em}',
+      '@media (hover:none){.ap-card-actions{opacity:1}}',
+      '@media (max-width:720px){.ap-card{grid-template-columns:auto minmax(0,1fr) auto;grid-template-areas:"icon main actions" "meta meta meta";gap:var(--ap-s2) var(--ap-s3)}.ap-card-meta{justify-content:flex-start;max-width:none;padding-left:calc(1.7em + var(--ap-s3))}.ap-card-actions .ap-card-star{display:none}.ap-card-actions{opacity:1}}',
+      '@media (max-width:720px){.ap-head{padding:var(--ap-s3) 0 var(--ap-s2)}.ap-hidden-wrap{position:static}.ap-hidden-pop{position:absolute;left:var(--ap-s2);right:var(--ap-s2);top:calc(100% + var(--ap-s1));min-width:0;max-width:none;max-height:min(65vh,32em)}.ap-body{padding:var(--ap-s1) 0 var(--ap-s4)}.ap-sub{display:none}.ap-search{max-width:none}}',
+      '.ap-page-sidebar .ap-head-inner,.ap-page-sidebar .ap-content{max-width:100%}',
+      '.ap-page-sidebar .ap-head{padding:var(--ap-s2) var(--ap-s2) var(--ap-s1)}',
       '.ap-page-sidebar .ap-title{font-size:1em}',
       '.ap-page-sidebar .ap-stats{white-space:normal}',
-      '.ap-page-sidebar .ap-toolbar{gap:.35em;margin-top:.55em}',
+      '.ap-page-sidebar .ap-hidden-wrap{position:static}',
+      '.ap-page-sidebar .ap-hidden-pop{position:absolute;left:var(--ap-s2);right:var(--ap-s2);top:calc(100% + var(--ap-s1));min-width:0;max-width:none;max-height:min(65vh,32em)}',
+      '.ap-page-sidebar .ap-toolbar{gap:var(--ap-s1);margin-top:var(--ap-s2)}',
       '.ap-page-sidebar .ap-search{flex:1 1 100%;min-width:0;max-width:none}',
       '.ap-page-sidebar .ap-btn{padding:0 .5em}',
       '.ap-page-sidebar .ap-seg{max-width:100%}',
-      '.ap-page-sidebar .ap-body{padding:.1em .7em 2.5em}',
+      '.ap-page-sidebar .ap-body{padding:var(--ap-s1) var(--ap-s2) var(--ap-s6)}',
       '.ap-page-sidebar .ap-grid{grid-template-columns:1fr}',
+      '.ap-page-sidebar .ap-card{grid-template-columns:auto minmax(0,1fr) auto;grid-template-areas:"icon main actions" "meta meta meta";gap:var(--ap-s2) var(--ap-s3)}',
+      '.ap-page-sidebar .ap-card-meta{justify-content:flex-start;max-width:none;padding-left:calc(1.7em + var(--ap-s3))}',
       // Wide right-pane layouts, chosen from the measured container width
       // (never window.innerWidth): two artifact columns from 480px, and the
       // reply beside its assets from 720px.
       '.ap-turn-body{min-width:0}',
       '.ap-page-sidebar.ap-layout-two-column .ap-grid{grid-template-columns:repeat(2,minmax(0,1fr))}',
-      '.ap-page-sidebar.ap-layout-split .ap-turn-body{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.1fr);gap:var(--ap-gap,.55em);align-items:start}',
+      '.ap-page-sidebar.ap-layout-split .ap-turn-body{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.1fr);gap:var(--ap-gap,var(--ap-s3));align-items:start}',
       '.ap-page-sidebar.ap-layout-split .ap-turn-body > .ap-reply{margin-bottom:0}',
       '.ap-page-sidebar.ap-layout-split .ap-turn-body-files{grid-template-columns:minmax(0,1fr)}',
       '.ap-page-sidebar.ap-layout-split .ap-grid{grid-template-columns:1fr}',
-      '.ap-page-sidebar .ap-turn{padding-top:1em}',
-      '.ap-page-sidebar .ap-reply{padding:.65em .8em}',
-      '.ap-page-sidebar .ap-pinned{margin-top:.7em;padding:.65em .8em}',
+      '.ap-page-sidebar .ap-turn{padding-top:var(--ap-s4)}',
+      '.ap-page-sidebar .ap-reply{padding:var(--ap-s2) var(--ap-s3)}',
+      '.ap-page-sidebar .ap-pinned{margin-top:var(--ap-s2);padding:var(--ap-s2) var(--ap-s3)}',
       '.ap-page-sidebar .ap-state{padding:3em 1em}',
       '.ap-page-sidebar .ap-toast{max-width:calc(100% - 1.4em);white-space:normal}',
-      '.ap-title-actions{display:flex;align-items:center;gap:.5em;flex-wrap:wrap;justify-content:flex-end}',
+      '.ap-title-actions{display:flex;align-items:center;gap:var(--ap-s2);flex-wrap:wrap;justify-content:flex-end}',
       '.ap-tabmenu{position:relative;z-index:32}',
       '.ap-tabmenu-panel{position:absolute;right:0;top:calc(100% + .35em);min-width:13em;max-width:min(20em,calc(100vw - 3em));max-height:70vh;overflow:auto;background:var(--ap-overlay, var(--dsw-alias-bg-overlay));border:1px solid var(--ap-border-strong, var(--dsw-alias-border-l2));border-radius:.5em;padding:.3em;box-shadow:0 8px 28px rgba(0,0,0,.2);z-index:32}',
       '.ap-tabmenu-item{display:flex;align-items:center;gap:.55em;width:100%;border:none;background:transparent;color:var(--ap-text, var(--dsw-alias-label-primary));font:inherit;font-size:.9em;text-align:left;padding:.5em .6em;border-radius:.35em;cursor:pointer;white-space:normal}',
@@ -3102,6 +3236,58 @@ window.__ModuleLoader__.load({
           }, t('empty.clearAll'))))
     }
 
+    // 「已筛选 N 项」的可解释弹层：按三类噪音规则分组列出被藏起来的轮次，
+    // 每条可单独恢复；底部清除全部筛选。空列表时入口本身不渲染。
+    function HiddenPopover(props) {
+      const t = props.t
+      const summary = props.summary || { groups: { shortReply: [], keyword: [], noArtifacts: [] }, total: 0 }
+      const summaryGroups = summary.groups || {}
+      const groups = [
+        { id: 'shortReply', label: t('hidden.group.short'), rows: summaryGroups.shortReply || [] },
+        { id: 'keyword', label: t('hidden.group.keyword'), rows: summaryGroups.keyword || [] },
+        { id: 'noArtifacts', label: t('hidden.group.noArtifacts'), rows: summaryGroups.noArtifacts || [] },
+      ].filter(function (group) { return group.rows.length > 0 })
+      function whyText(group, entry) {
+        if (group.id === 'shortReply') return t('hidden.why.short', { length: entry.length, threshold: entry.threshold })
+        if (group.id === 'keyword') return t('hidden.why.keyword', { keyword: entry.keyword })
+        return t('hidden.why.noArtifacts')
+      }
+      return h('div', {
+        className: 'ap-pop ap-hidden-pop', role: 'dialog',
+        'aria-label': t('hidden.heading'), ref: props.innerRef,
+        'data-hidden-pop': 'true',
+      },
+      h('div', { className: 'ap-pop-head' }, t('hidden.heading')),
+      h('div', { className: 'ap-pop-note' }, t('hidden.note')),
+      groups.length === 0 ? h('div', { className: 'ap-pop-note' }, t('hidden.empty')) : groups.map(function (group) {
+        return h('div', { key: group.id, className: 'ap-hidden-group', 'data-hidden-group': group.id },
+          h('div', { className: 'ap-hidden-group-head' },
+            h('span', null, group.label),
+            h('span', null, String(group.rows.length))),
+          group.rows.map(function (entry) {
+            return h('div', {
+              key: 'hidden-' + entry.turn, className: 'ap-hidden-item',
+              'data-hidden-turn': String(entry.turn), 'data-hidden-reason': group.id,
+            },
+            h('div', { className: 'ap-hidden-main' },
+              h('div', { className: 'ap-hidden-title' }, entry.snippet || t('hidden.noReply')),
+              h('div', { className: 'ap-hidden-why' }, t('hidden.why.turn', { n: entry.turn }) + ' · ' + whyText(group, entry))),
+            h('button', {
+              type: 'button', className: 'ap-linkbtn ap-hidden-restore',
+              'data-hidden-restore': String(entry.turn),
+              onClick: function () {
+                if (typeof props.onRestore === 'function') props.onRestore(entry.turn)
+              },
+            }, t('hidden.restore')))
+          }))
+      }),
+      h('div', { className: 'ap-pop-divider' }),
+      h('button', {
+        type: 'button', className: 'ap-pop-row', 'data-hidden-action': 'clear',
+        onClick: function () { if (typeof props.onClear === 'function') props.onClear() },
+      }, h('span', null, t('hidden.clear'))))
+    }
+
     function ErrorState(props) {
       const t = props.t
       const [copied, setCopied] = React.useState('')
@@ -3417,8 +3603,12 @@ window.__ModuleLoader__.load({
       const [query, setQuery] = React.useState('')
       const [showHidden, setShowHidden] = React.useState(false)
       const [showAllTurns, setShowAllTurns] = React.useState(false)
+      // 单条「恢复显示」：被噪音规则隐藏的轮次在这里登记后，规则仍保留，但该轮
+      // 始终可见。只存在本次会话内，不改用户的过滤器设置。
+      const [revealedTurns, setRevealedTurns] = React.useState({})
       const [menuOpen, setMenuOpen] = React.useState(false)
       const [filterOpen, setFilterOpen] = React.useState(false)
+      const [explainOpen, setExplainOpen] = React.useState(false)
       const [settingsOpen, setSettingsOpen] = React.useState(false)
       const [sortMode, setSortMode] = React.useState('default')
       const [onboarded, setOnboarded] = useOnboarding()
@@ -3480,6 +3670,7 @@ window.__ModuleLoader__.load({
       const [exportBusy, setExportBusy] = React.useState(false)
       const changeSummaries = React.useRef(new Map())
       const filterRef = React.useRef(null)
+      const explainRef = React.useRef(null)
       const moreRef = React.useRef(null)
       const cardMenuRef = React.useRef(null)
       const settingsRef = React.useRef(null)
@@ -3488,6 +3679,7 @@ window.__ModuleLoader__.load({
       // Focus traps: the filter popover, the toolbar ⋯ menu, the per-card menu
       // and the settings drawer all keep Tab inside and return focus on close.
       useFocusTrap(filterOpen, filterRef, function () { setFilterOpen(false) })
+      useFocusTrap(explainOpen, explainRef, function () { setExplainOpen(false) })
       useFocusTrap(moreOpen, moreRef, function () { setMoreOpen(false) })
       useFocusTrap(cardMenu !== null, cardMenuRef, function () { setCardMenu(null) })
       useFocusTrap(settingsOpen, settingsRef, function () { setSettingsOpen(false) })
@@ -3511,6 +3703,9 @@ window.__ModuleLoader__.load({
 
       React.useEffect(function () {
         setPrefs(readPrefs(sessionId))
+        // 单条恢复与说明弹层只属于当前会话，切换会话时不带到下一份列表。
+        setRevealedTurns({})
+        setExplainOpen(false)
       }, [sessionId])
 
       React.useEffect(function () {
@@ -3774,6 +3969,9 @@ window.__ModuleLoader__.load({
       const starSet = React.useMemo(function () { return new Set(prefs.stars) }, [prefs.stars])
       const hiddenSet = React.useMemo(function () { return new Set(prefs.hidden) }, [prefs.hidden])
       const keywordList = React.useMemo(function () { return parseKeywords(settings.ignoreKeywords) }, [settings.ignoreKeywords])
+      const revealedSet = React.useMemo(function () {
+        return new Set(Object.keys(revealedTurns).map(function (key) { return Number(key) }))
+      }, [revealedTurns])
 
       function showToast(message) {
         setToast(message)
@@ -3784,6 +3982,7 @@ window.__ModuleLoader__.load({
       // Only one layer is open at a time; the settings drawer is the deepest.
       function openSettingsDrawer() {
         setFilterOpen(false)
+        setExplainOpen(false)
         setMoreOpen(false)
         setMenuOpen(false)
         setCardMenu(null)
@@ -3795,14 +3994,34 @@ window.__ModuleLoader__.load({
       }
 
       function toggleFilterPopover() {
+        setExplainOpen(false)
         setMoreOpen(false)
         setMenuOpen(false)
         setCardMenu(null)
         setFilterOpen(function (value) { return !value })
       }
 
+      // 顶栏「已筛选 N 项」：与筛选弹层互斥，点开看到被藏起来的轮次和原因。
+      function toggleExplainPopover() {
+        setFilterOpen(false)
+        setMoreOpen(false)
+        setMenuOpen(false)
+        setCardMenu(null)
+        setExplainOpen(function (value) { return !value })
+      }
+
+      function restoreHiddenTurn(turnNumber) {
+        setRevealedTurns(function (prev) {
+          const next = Object.assign({}, prev)
+          next[String(turnNumber)] = true
+          return next
+        })
+        showToast(t('hidden.restored', { n: turnNumber }))
+      }
+
       function toggleMoreMenu() {
         setFilterOpen(false)
+        setExplainOpen(false)
         setMenuOpen(false)
         setCardMenu(null)
         setMoreOpen(function (value) { return !value })
@@ -3953,9 +4172,19 @@ window.__ModuleLoader__.load({
           showHidden: showHidden,
           hiddenSet: hiddenSet,
           showAllTurns: showAllTurns,
+          revealedTurns: revealedSet,
           keywordList: keywordList,
         })
-      }, [data.turns, filter, query, showHidden, hiddenSet, settings, showAllTurns, keywordList])
+      }, [data.turns, filter, query, showHidden, hiddenSet, settings, showAllTurns, revealedSet, keywordList])
+
+      const hiddenSummary = React.useMemo(function () {
+        return collectHiddenTurns(data.turns, {
+          settings: settings,
+          showAllTurns: showAllTurns,
+          revealedTurns: revealedSet,
+          keywordList: keywordList,
+        })
+      }, [data.turns, settings, showAllTurns, revealedSet, keywordList])
 
       const dimension = resolveDimension(data.team, data.runs, userDimension || settings.defaultDimension)
       const isTurnsDimension = dimension === 'turns'
@@ -4013,8 +4242,13 @@ window.__ModuleLoader__.load({
         })
         : t('all.preparing')
       const activeFilterCount = (filter !== 'all' ? 1 : 0) + (query.trim() !== '' ? 1 : 0) + (showHidden ? 1 : 0) + (settings.hideTurnsWithoutArtifacts === true ? 1 : 0) + (showAllTurns ? 1 : 0)
-      const headerStatsText = (scope === 'all' ? allStatsText : statsText) +
-        (activeFilterCount > 0 ? ' · ' + t('stats.filtered', { count: activeFilterCount }) : '')
+      const headerStatsText = scope === 'all' ? allStatsText : statsText
+      // 顶栏不再把「N 项」当黑盒数字：N 只统计真正被噪音规则藏起来的轮次，
+      // 点开逐条列出原因，恢复一条就减一，归零后入口消失。
+      const hiddenCount = scope === 'session' && isTurnsDimension ? hiddenSummary.total : 0
+      React.useEffect(function () {
+        if (explainOpen && hiddenCount === 0) setExplainOpen(false)
+      }, [explainOpen, hiddenCount])
 
       const pinned = React.useMemo(function () {
         const result = []
@@ -4066,14 +4300,27 @@ window.__ModuleLoader__.load({
       if (settings.hideTurnsWithoutArtifacts === true) emptyChips.push({ key: 'onlyArtifacts', label: t('filter.onlyArtifacts'), onRemove: function () { setSettings({ hideTurnsWithoutArtifacts: false }) } })
       if (showAllTurns) emptyChips.push({ key: 'showAll', label: t('filter.showAllTurns'), onRemove: function () { setShowAllTurns(false) } })
 
+      // 空状态里的「清空全部筛选」只复位显式筛选条件，不动用户配置的噪音规则。
       function clearFilters() {
         setFilter('all')
         setQuery('')
         setShowHidden(false)
         setShowAllTurns(false)
-        // The noise toggle is a setting, but it also hides turns: clearing the
-        // empty state must be able to lift it too.
+        setRevealedTurns({})
+        setExplainOpen(false)
         if (settings.hideTurnsWithoutArtifacts === true) setSettings({ hideTurnsWithoutArtifacts: false })
+      }
+
+      // 说明弹层里的「清除全部筛选」要把三类噪音规则一起关掉，列表才真的还原；
+      // 收藏/隐藏记录不动，且这是一次显式的用户动作。
+      function clearAllHidden() {
+        setFilter('all')
+        setQuery('')
+        setShowHidden(false)
+        setShowAllTurns(false)
+        setRevealedTurns({})
+        setExplainOpen(false)
+        setSettings({ hideTurnsWithoutArtifacts: false, hideShortReplies: false, ignoreKeywords: '' })
       }
 
       function downloadManifest(links) {
@@ -4309,13 +4556,13 @@ window.__ModuleLoader__.load({
             title: file.path, 'aria-label': t('action.copy') + ' · ' + file.path,
             onClick: function (event) { event.stopPropagation(); copyPath(file.path) },
           }, middleEllipsis(file.path, 44)),
-          h('div', { className: 'ap-card-meta' },
-            h('span', { className: 'ap-chip' }, t('kind.' + file.kind)),
-            file.source === 'presented' ? h('span', { className: 'ap-chip ap-chip-accent' }, t('source.presented')) : null,
-            file.childId ? h('span', { className: 'ap-chip ap-chip-sub', title: file.childId }, t('badge.subagent') + (file.childName ? ' · ' + file.childName : '')) : null,
-            h('span', null, t('turn.short', { n: turn.turn })),
-            file.description ? h('span', { className: 'ap-card-desc', title: file.description }, file.description) : null
-          )
+          file.description ? h('span', { className: 'ap-card-desc', title: file.description }, file.description) : null
+        ),
+        h('div', { className: 'ap-card-meta' },
+          h('span', { className: 'ap-chip' }, t('kind.' + file.kind)),
+          file.source === 'presented' ? h('span', { className: 'ap-chip ap-chip-accent' }, t('source.presented')) : null,
+          file.childId ? h('span', { className: 'ap-chip ap-chip-sub', title: file.childId }, t('badge.subagent') + (file.childName ? ' · ' + file.childName : '')) : null,
+          h('span', { className: 'ap-card-turn' }, t('turn.short', { n: turn.turn }))
         ),
         h('div', { className: 'ap-card-actions' }, actions),
         menuOpenForCard && menuItems.length > 0 ? h('div', {
@@ -4336,27 +4583,28 @@ window.__ModuleLoader__.load({
       // turn.reply directly (see manifestText), so they still emit Markdown.
       function replyTextNode(text, clamped) {
         const clampedFlag = clamped ? 'true' : 'false'
+        const clampAttrs = { 'data-clamped': clampedFlag, 'data-clamp-lines': clamped ? String(REPLY_CLAMP_LINES) : undefined }
         if (settings.renderMarkdown !== true) {
-          return h('div', { className: 'ap-reply-text', 'data-clamped': clampedFlag }, text)
+          return h('div', Object.assign({ className: 'ap-reply-text' }, clampAttrs), text)
         }
-        return h('div', {
+        return h('div', Object.assign({
           className: 'ap-reply-text ap-md',
-          'data-clamped': clampedFlag,
           dangerouslySetInnerHTML: { __html: renderMarkdownHtml(text) },
-        })
+        }, clampAttrs))
       }
 
       function turnSection(turn) {
-        // Replies clamp to roughly six to eight lines so a long, file-free turn
-        // still reads as one compact card with an explicit expand control.
-        const longReply = turn.reply.length > 700 || turn.reply.split('\n').length > 8
+        // 超过 6 行（或 700 字）就整行收起；按钮常驻卡片头部右侧，展开/收起
+        // 只改变正文高度，头部布局和按钮位置都不跳。
+        const replyLines = turn.reply.split(/\r?\n/).length
+        const longReply = turn.reply.length > 700 || replyLines > REPLY_CLAMP_LINES
         const isExpanded = expanded[turn.turn] === true
         const hasReply = turn.reply.trim() !== ''
         // The body wrapper is what the wide (>=720px) right pane turns into two
         // columns: reply on the left, artifact cards on the right.
         const bodyClass = 'ap-turn-body' + (hasReply ? '' : ' ap-turn-body-files')
-        return h('section', { className: 'ap-turn', key: 'turn-' + turn.turn },
-          h('div', { className: 'ap-turn-head' },
+        return h('section', { className: 'ap-turn', key: 'turn-' + turn.turn, 'data-turn': String(turn.turn) },
+          h('div', { className: 'ap-turn-head', 'data-turn-head': 'true' },
             h('span', { className: 'ap-turn-no' }, t('turn.label', { n: turn.turn })),
             turn.startTime || turn.endTime ? h('span', { className: 'ap-turn-time' }, formatTime(turn.endTime || turn.startTime)) : null,
             turn.files.length > 0 ? h('span', { className: 'ap-turn-meta' }, t('turn.files', { count: turn.files.length })) : null,
@@ -4375,7 +4623,10 @@ window.__ModuleLoader__.load({
               h('div', { className: 'ap-reply-head' },
                 h('span', { className: 'ap-reply-label' }, t('reply.label')),
                 longReply ? h('button', {
-                  type: 'button', className: 'ap-linkbtn',
+                  type: 'button', className: 'ap-linkbtn ap-reply-toggle',
+                  'data-reply-toggle': 'true',
+                  'aria-expanded': isExpanded ? 'true' : 'false',
+                  title: isExpanded ? t('reply.collapse') : t('reply.expand'),
                   onClick: function () { setExpanded(function (prev) { const next = Object.assign({}, prev); next[turn.turn] = !isExpanded; return next }) },
                 }, isExpanded ? t('reply.collapse') : t('reply.expand')) : null
               ),
@@ -4504,13 +4755,14 @@ window.__ModuleLoader__.load({
       const refreshing = data.status === 'refreshing'
       const content = []
       if (loading) {
-        content.push(h('div', { key: 'loading' },
+        content.push(h('div', { key: 'loading', role: 'status', 'aria-label': t('loading') },
           h('div', { className: 'ap-skel-lines' },
             h('div', { className: 'ap-skel', style: { width: '38%' } }),
             h('div', { className: 'ap-skel', style: { width: '82%' } }),
             h('div', { className: 'ap-skel', style: { width: '64%' } })),
           h('div', { className: 'ap-skel-grid' },
-            h('div', { className: 'ap-skel-card' }), h('div', { className: 'ap-skel-card' }), h('div', { className: 'ap-skel-card' }))))
+            h('div', { className: 'ap-skel-card' }), h('div', { className: 'ap-skel-card' }), h('div', { className: 'ap-skel-card' })),
+          h('div', { className: 'ap-skel-status' }, t('loading'))))
       } else if (data.status === 'error') {
         const info = errorSummary(t, data.error, sessionId)
         content.push(h(ErrorState, {
@@ -4671,8 +4923,8 @@ window.__ModuleLoader__.load({
           h('div', { className: 'ap-pop-divider' }),
           h('button', {
             type: 'button', className: 'ap-pop-row', 'data-filter-action': 'clear',
-            disabled: activeFilterCount === 0,
-            onClick: function () { clearFilters(); setFilterOpen(false) },
+            disabled: activeFilterCount === 0 && hiddenCount === 0,
+            onClick: function () { if (hiddenCount > 0) clearAllHidden(); else clearFilters(); setFilterOpen(false) },
           }, h('span', null, t('filter.clear'))),
           h('div', { className: 'ap-pop-note' }, t('filter.subtitle')))
       }
@@ -4722,7 +4974,24 @@ window.__ModuleLoader__.load({
                 h('h1', { className: 'ap-title' }, t('title')),
                 compact ? null : h('div', { className: 'ap-sub' }, t('subtitle'))),
               h('div', { className: 'ap-title-actions' },
-                h('div', { className: 'ap-stats' }, headerStatsText),
+                h('div', { className: 'ap-stats' },
+                  h('span', { className: 'ap-stats-text' }, headerStatsText),
+                  hiddenCount > 0 ? h('span', { className: 'ap-hidden-wrap' },
+                    h('button', {
+                      type: 'button', className: 'ap-hidden-btn',
+                      'data-hidden-open': explainOpen ? 'true' : 'false',
+                      'aria-haspopup': 'dialog', 'aria-expanded': explainOpen ? 'true' : 'false',
+                      title: t('hidden.open') + ' · ' + t('stats.filtered', { count: hiddenCount }),
+                      'aria-label': t('hidden.open') + ' · ' + t('stats.filtered', { count: hiddenCount }),
+                      onClick: toggleExplainPopover,
+                    }, h('span', null, t('stats.filtered', { count: hiddenCount })), h('span', { 'aria-hidden': 'true' }, '▾')),
+                    explainOpen ? h(HiddenPopover, {
+                      t: t,
+                      summary: hiddenSummary,
+                      innerRef: explainRef,
+                      onRestore: restoreHiddenTurn,
+                      onClear: clearAllHidden,
+                    }) : null) : null),
                 compact && props.sidebarActions ? h('div', { className: 'ap-tabmenu' },
                   h('button', {
                     type: 'button', className: 'ap-iconbtn',
@@ -4834,6 +5103,7 @@ window.__ModuleLoader__.load({
                 h('button', { type: 'button', className: 'ap-linkbtn', onClick: function () { setRefreshKey(function (value) { return value + 1 }) } }, t('error.retry'))) : null,
               content)),
         filterOpen ? h('div', { className: 'ap-menu-backdrop-card', onClick: function () { setFilterOpen(false) } }) : null,
+        explainOpen ? h('div', { className: 'ap-menu-backdrop-card', onClick: function () { setExplainOpen(false) } }) : null,
         menuOpen && compact ? h('div', { className: 'ap-menu-backdrop', onClick: function () { setMenuOpen(false) } }) : null,
         cardMenu !== null ? h('div', { className: 'ap-menu-backdrop-card', onClick: function () { setCardMenu(null) } }) : null,
         moreOpen ? h('div', { className: 'ap-menu-backdrop-card', onClick: function () { setMoreOpen(false) } }) : null,
@@ -6024,6 +6294,12 @@ window.__ModuleLoader__.load({
           foldSession: foldSession,
           buildGroups: buildGroups,
           selectVisibleTurns: selectVisibleTurns,
+          collectHiddenTurns: collectHiddenTurns,
+          hiddenSnippet: hiddenSnippet,
+          contentColumnWidth: contentColumnWidth,
+          CONTENT_MAX_WIDTH: CONTENT_MAX_WIDTH,
+          CONTENT_GUTTER: CONTENT_GUTTER,
+          REPLY_CLAMP_LINES: REPLY_CLAMP_LINES,
           normalizeSettings: normalizeSettings,
           DEFAULT_SETTINGS: DEFAULT_SETTINGS,
           setSettings: setSettings,
@@ -6056,6 +6332,7 @@ window.__ModuleLoader__.load({
           SORT_MODES: SORT_MODES,
           EmptyNew: EmptyNew,
           EmptyFiltered: EmptyFiltered,
+          HiddenPopover: HiddenPopover,
           ErrorState: ErrorState,
           OnboardingCard: OnboardingCard,
           diagnosticsText: diagnosticsText,
