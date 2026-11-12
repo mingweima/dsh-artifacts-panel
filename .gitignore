@@ -1,0 +1,14 @@
+# 忽略规则
+
+# 依赖
+node_modules/
+
+# 旧版插件目录内的索引（0.2.0 起索引在 $DSH_HOME/artifacts-panel/index/）
+.index/
+
+# 日志与系统文件
+*.log
+.DS_Store
+
+# 开发用自测 / 构建工具，不进发布仓
+tools/
