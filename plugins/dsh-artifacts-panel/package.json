@@ -1,0 +1,63 @@
+{
+  "name": "@local/dsh-artifacts-panel",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "description": "Session artifact panel: aggregates final replies, documents, images and other produced files into one organized page and a right-sidebar tab.",
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek-harness",
+    "artifacts",
+    "deliverables",
+    "session",
+    "sidebar",
+    "workbench"
+  ],
+  "author": "mingweima",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/mingweima/dsh-artifacts-panel.git"
+  },
+  "homepage": "https://github.com/mingweima/dsh-artifacts-panel#readme",
+  "engines": {
+    "dsh": ">=0.2.2-rc.2 <0.3.0"
+  },
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./locale/*.json": "./locale/*.json",
+    "./icon": "./icon.svg"
+  },
+  "files": [
+    "index.js",
+    "client.js",
+    "cordis.patch.yml",
+    "locale/*.json",
+    "icon.svg",
+    "README.md"
+  ],
+  "dependencies": {
+    "@deepseek-ai/schemastery": "^3.19.0"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "immediately": true,
+      "inject": [
+        "@deepseek-ai/dsh-api-remotes",
+        "@deepseek-ai/dsh-client-connection",
+        "@deepseek-ai/dsh-client-locale",
+        "@deepseek-ai/dsh-client-ui-chat",
+        "@deepseek-ai/dsh-client-ui-conversation",
+        "@deepseek-ai/dsh-client-ui-renderer",
+        "@deepseek-ai/dsh-client-ui-sidebar-right",
+        "@deepseek-ai/dsh-client-ui-workspace"
+      ]
+    }
+  }
+}
