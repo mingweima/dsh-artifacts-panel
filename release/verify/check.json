@@ -1,14 +1,14 @@
 {
-  "generatedAt": "2026-11-22T01:08:41.150Z",
+  "generatedAt": "2026-11-22T01:16:30.835Z",
   "package": {
     "name": "dsh-artifacts-panel",
     "version": "0.2.0",
     "tarball": "dsh-artifacts-panel-0.2.0.tgz",
     "fileCount": 9,
-    "packedBytes": 108787,
-    "unpackedBytes": 441374,
-    "shasum": "5f892166dcdca3f1b31cc3b61a066d1c2c61868b",
-    "integrity": "sha512-F+xkU6jpmpojNY+/AwYl0kvyRsnQ/Gm6oXVmYVXfHrBpCUN8iiAVsX0vjLDmfdKGoagi4gOG2sfbPKdgYSAJXw=="
+    "packedBytes": 109520,
+    "unpackedBytes": 443781,
+    "shasum": "24ef6be3e36adb26bb426fb6b1571a41d6f07083",
+    "integrity": "sha512-Tfmk+cJsG7z/0j2sWwj+7X+hrmS1jfZnWPd5h8DMF3L0R133URm29NvG1bu3Rjk3P+inn9/6lQi9e8AtHXU24A=="
   },
   "files": [
     "LICENSE",
@@ -24,14 +24,14 @@
   "sizes": {
     "LICENSE": 1056,
     "README.md": 27356,
-    "client.js": 354959,
+    "client.js": 357366,
     "cordis.patch.yml": 74,
     "icon.svg": 555,
     "index.js": 55367,
     "locale/en.json": 217,
     "locale/zh.json": 218,
     "package.json": 1572,
-    "total": 441374
+    "total": 443781
   },
   "engines": {
     "dsh": ">=0.2.2-rc.2 <0.3.0"

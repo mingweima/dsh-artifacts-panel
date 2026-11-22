@@ -938,6 +938,7 @@ window.__ModuleLoader__.load({
       const calls = new Map()
       const tasks = new Map()
       const members = new Map()
+      const catalog = new Map()
       const runs = new Map()
       const events = []
       for (const record of records) {
@@ -1016,31 +1017,50 @@ window.__ModuleLoader__.load({
           continue
         }
         if (event.type === 'team/task') {
-          const id = typeof data.id === 'string' ? data.id : ''
+          // DSH 0.2.2-rc.x 起 payload 是 {version, teamId, task:{...}}；更早是扁平字段。两种都吃。
+          const body = data.task && typeof data.task === 'object' ? data.task : data
+          const id = typeof body.id === 'string' ? body.id : ''
           if (!id) continue
-          const revision = Number.isFinite(data.revision) ? data.revision : 0
+          const status = typeof body.status === 'string' ? body.status : ''
+          if (status === 'deleted') { tasks.delete(id); continue }
+          const revision = Number.isFinite(body.revision) ? body.revision : 0
           const previous = tasks.get(id)
           if (!previous || revision >= (previous.revision || 0)) {
             tasks.set(id, {
               id: id,
               revision: revision,
-              subject: typeof data.subject === 'string' && data.subject !== '' ? data.subject : id,
-              description: typeof data.description === 'string' ? data.description : '',
-              status: typeof data.status === 'string' ? data.status : '',
-              ownerId: typeof data.ownerId === 'string' ? data.ownerId : '',
-              blockedBy: Array.isArray(data.blockedBy) ? data.blockedBy.map(String) : [],
-              writeScopes: Array.isArray(data.writeScopes) ? data.writeScopes.filter(function (scope) { return typeof scope === 'string' && scope.trim() !== '' }) : [],
+              subject: typeof body.subject === 'string' && body.subject !== '' ? body.subject : id,
+              description: typeof body.description === 'string' ? body.description : '',
+              status: status,
+              ownerId: typeof body.ownerId === 'string' ? body.ownerId : '',
+              blockedBy: Array.isArray(body.blockedBy) ? body.blockedBy.map(String) : [],
+              writeScopes: Array.isArray(body.writeScopes) ? body.writeScopes.filter(function (scope) { return typeof scope === 'string' && scope.trim() !== '' }) : [],
             })
           }
           continue
         }
         if (event.type === 'team/member') {
-          const id = typeof data.id === 'string' ? data.id : ''
+          const body = data.member && typeof data.member === 'object' ? data.member : data
+          const id = typeof body.id === 'string' ? body.id : ''
           if (!id) continue
           members.set(id, {
             id: id,
-            name: typeof data.name === 'string' && data.name !== '' ? data.name : id,
-            phase: typeof data.phase === 'string' ? data.phase : '',
+            name: typeof body.name === 'string' && body.name !== '' ? body.name : id,
+            phase: typeof body.phase === 'string' ? body.phase : '',
+          })
+          continue
+        }
+        if (event.type === 'subagent/catalog') {
+          // 一次性 subagent（不挂在团队/ workflow 下）只会出现在目录事件里，漏了它产物就永远看不到。
+          const childId = typeof data.childId === 'string' ? data.childId : ''
+          if (!childId) continue
+          const label = typeof data.label === 'string' && data.label !== '' ? data.label : ''
+          const mode = typeof data.mode === 'string' ? data.mode : ''
+          catalog.set(childId, {
+            id: childId,
+            name: label || mode || childId,
+            mode: mode,
+            createdAt: Number.isFinite(data.childCreatedAt) ? data.childCreatedAt : 0,
           })
           continue
         }
@@ -1132,6 +1152,10 @@ window.__ModuleLoader__.load({
             runId: run.runId,
           })
         }
+      }
+      for (const entry of catalog.values()) {
+        if (children.has(entry.id)) continue
+        children.set(entry.id, { id: entry.id, name: entry.name, phase: '', kind: 'catalog', runId: '', mode: entry.mode })
       }
       return {
         turns: result,
@@ -1296,8 +1320,16 @@ window.__ModuleLoader__.load({
             rows.push(row)
             assignedChild.add(row.childId + '|' + row.turn + '|' + row.path)
           }
-          if (rows.length > 0) {
-            groups.push({ key: 'unassigned', kind: 'unassigned', title: labels.unassigned || 'Unassigned', subtitle: '', status: '', owner: '', members: [], writeScopes: [], childIds: [], rows: dedupeRows(rows) })
+          // 没有任务归属的一次性子代理（subagent/catalog）挂在这一组，展开时才拉，别预取。
+          const looseChildIds = []
+          for (const child of options.children || []) {
+            if (!child || !child.id) continue
+            if (childTask.has(child.id)) continue
+            if (child.kind === 'agent') continue
+            looseChildIds.push(child.id)
+          }
+          if (rows.length > 0 || looseChildIds.length > 0) {
+            groups.push({ key: 'unassigned', kind: 'unassigned', title: labels.unassigned || 'Unassigned', subtitle: '', status: '', owner: '', members: [], writeScopes: [], childIds: looseChildIds, rows: dedupeRows(rows) })
           }
         }
       } else {
@@ -4077,6 +4109,19 @@ window.__ModuleLoader__.load({
         drain()
       }
 
+      const CHILD_CACHE_MAX = 24
+      function pruneChildCache() {
+        const cache = childCache.current
+        if (!cache || cache.size <= CHILD_CACHE_MAX) return
+        const entries = []
+        cache.forEach(function (value, key) { entries.push([key, value]) })
+        entries.sort(function (left, right) { return (left[1].at || 0) - (right[1].at || 0) })
+        for (let index = 0; index < entries.length - CHILD_CACHE_MAX; index += 1) {
+          if (entries[index][1].pending) continue
+          cache.delete(entries[index][0])
+        }
+      }
+
       function ensureChild(childId) {
         if (!childId || typeof props.loadChildArtifacts !== 'function') return
         const cached = childCache.current.get(childId)
@@ -4103,6 +4148,7 @@ window.__ModuleLoader__.load({
                 for (const file of turn.files) rows.push(Object.assign({}, file, { turn: turn.turn }))
               }
               childCache.current.set(childId, { rows: rows, at: Date.now(), pending: false })
+              pruneChildCache()
               setChildVersion(function (value) { return value + 1 })
             })
             .catch(function (error) {

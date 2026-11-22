@@ -339,11 +339,15 @@ const turnRecords = [
   ev(10, 'workspace/changes', 2500, { turn: 2 }),
 ]
 
+// 真实 wire 形状：DSH 0.2.2-rc.x 的 team/* payload 是 {version, teamId, task|member}，
+// 不是扁平字段。夹具必须照它写，否则「解包错」这类回归测不出来。
 const taskRecords = [
-  ev(1, 'team/member', 1000, { id: 'm-1', name: '阿蓝', phase: 'build' }),
-  ev(2, 'team/task', 1100, { id: 't-1', revision: 1, subject: '写数据层', status: 'running', ownerId: 'm-1', writeScopes: ['/ws/a'] }),
-  ev(3, 'team/task', 1200, { id: 't-2', revision: 1, subject: '补测试', status: 'pending', ownerId: '', writeScopes: ['/ws/b'] }),
-  ev(4, 'team/task', 1300, { id: 't-1', revision: 2, subject: '写数据层', status: 'completed', ownerId: 'm-1', writeScopes: ['/ws/a'] }),
+  ev(1, 'team/member', 1000, { version: 2, teamId: 'team-1', member: { id: 'm-1', name: '阿蓝', phase: 'build' } }),
+  ev(2, 'team/task', 1100, { version: 2, teamId: 'team-1', task: { id: 't-1', revision: 1, subject: '写数据层', status: 'running', ownerId: 'm-1', writeScopes: ['/ws/a'] } }),
+  ev(3, 'team/task', 1200, { version: 2, teamId: 'team-1', task: { id: 't-2', revision: 1, subject: '补测试', status: 'pending', ownerId: '', writeScopes: ['/ws/b'] } }),
+  ev(4, 'team/task', 1300, { version: 2, teamId: 'team-1', task: { id: 't-1', revision: 2, subject: '写数据层', status: 'completed', ownerId: 'm-1', writeScopes: ['/ws/a'] } }),
+  ev(4.5, 'team/task', 1350, { version: 2, teamId: 'team-1', task: { id: 't-3', revision: 1, subject: '已删除的任务', status: 'deleted', ownerId: '', writeScopes: [] } }),
+  ev(4.6, 'subagent/catalog', 1360, { childId: 'c-9', mode: 'research', label: '一次性侦察', version: 1 }),
   ev(5, 'turn/start', 1400, { turn: 1 }),
   ev(6, 'deliverables/presented', 1500, { turn: 1, files: [{ path: '/ws/a/client.js' }, { path: '/ws/b/harness.cjs' }, { path: '/ws/misc/notes.md' }] }),
   ev(7, 'turn/end', 1600, { turn: 1, reason: { kind: 'normal' } }),
@@ -603,6 +607,11 @@ const v3 = {
   taskTwoRows: Boolean(byKey['task:t-2']) && groupPaths(byKey['task:t-2']).includes('/ws/b/harness.cjs'),
   taskUnassigned: Boolean(byKey.unassigned) && groupPaths(byKey.unassigned).includes('/ws/misc/notes.md') && !groupPaths(byKey.unassigned).includes('/ws/a/client.js'),
   taskChildRowBadge: Boolean(byKey['task:t-1']) && byKey['task:t-1'].rows.some(row => row.childId === 'm-1' && row.path === '/ws/a/child-report.md'),
+  // 嵌套 payload 必须能解开；deleted 任务要剔掉；一次性 subagent 要能进目录并落到未归属组
+  taskNestedPayload: taskFold.team.tasks.length === 2 && taskFold.team.members.length === 1,
+  taskDeletedFiltered: !taskFold.team.tasks.some(task => task.id === 't-3'),
+  catalogChildFolded: taskFold.children.some(child => child.id === 'c-9' && child.kind === 'catalog' && child.name === '一次性侦察'),
+  catalogInUnassigned: Boolean(byKey.unassigned) && byKey.unassigned.childIds.indexOf('c-9') !== -1,
   // fixture 3: one workflow run with two phases
   runFold: runFold.runs.length === 1 && runFold.runs[0].status === 'completed' && runFold.runs[0].phases.length === 2,
   runAgents: runFold.runs[0].agents.length === 2 && runFold.runs[0].agents[0].outcome === 'ok' && runFold.runs[0].agents[1].outcome === 'ok',

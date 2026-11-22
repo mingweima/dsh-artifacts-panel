@@ -8,7 +8,7 @@ npm notice 📦  dsh-artifacts-panel@0.2.0
 npm notice === Tarball Contents === 
 npm notice 1.1kB   LICENSE         
 npm notice 27.4kB  README.md       
-npm notice 355.0kB client.js       
+npm notice 357.4kB client.js       
 npm notice 74B     cordis.patch.yml
 npm notice 555B    icon.svg        
 npm notice 55.4kB  index.js        
@@ -19,10 +19,10 @@ npm notice === Tarball Details ===
 npm notice name:          dsh-artifacts-panel                     
 npm notice version:       0.2.0                                   
 npm notice filename:      dsh-artifacts-panel-0.2.0.tgz           
-npm notice package size:  108.8 kB                                
-npm notice unpacked size: 441.4 kB                                
-npm notice shasum:        5f892166dcdca3f1b31cc3b61a066d1c2c61868b
-npm notice integrity:     sha512-F+xkU6jpmpojN[...]sfbPKdgYSAJXw==
+npm notice package size:  109.5 kB                                
+npm notice unpacked size: 443.8 kB                                
+npm notice shasum:        24ef6be3e36adb26bb426fb6b1571a41d6f07083
+npm notice integrity:     sha512-Tfmk+cJsG7z/0[...]Qi9e8AtHXU24A==
 npm notice total files:   9                                       
 npm notice 
 

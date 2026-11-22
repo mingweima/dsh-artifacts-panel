@@ -1,5 +1,26 @@
 # CHANGELOG
 
+## 0.2.1 — v3 任务分组真机修复（2026-11-22，未发布）
+
+### 修复（真机上会静默失效的三处）
+
+- **team/task、team/member 解包错**：DSH 0.2.2-rc.x 起 payload 是 `{version, teamId, task|member}` 嵌套对象，旧代码按扁平字段读，任务恒为 0 个，`auto` 维度永远回落到轮次、任务分组根本不出现。现在两种形状都吃（`client.js` foldSession）。
+- **subagent/catalog 没折叠**：一次性 subagent（只走 `subagent` 工具、不在团队/workflow 下）不出现在 `children`，其产物既不能展开也不能下钻。现在按 `{childId, label, mode}` 折进 `children`（`kind: 'catalog'`）。
+- **未归属组不触发子会话加载**：`childIds` 为空导致「加载子代理产物」按钮不出现。任务维度下未归属组现在带上没有任务归属的一次性子代理。
+
+### 其他
+
+- 任务状态 `deleted` 的任务不再成组（与官方面板口径一致）。
+- `childCache` 加 24 个 child 的 LRU 上限，长会话内存不再只增不减。
+- `tools/render-harness.cjs` 夹具改成真实嵌套 wire 形状，并新增 `t-3(deleted)` 与 `c-9(subagent/catalog)` 用例；新增断言 `taskNestedPayload` / `taskDeletedFiltered` / `catalogChildFolded` / `catalogInUnassigned`。
+
+### 验证
+
+- 修复前：新夹具 7 条断言变红（`taskMember`、`tasksGroupCount`、`taskNestedPayload`、`catalogChildFolded`、`catalogInUnassigned`、`renderTaskStats` 等）
+- 修复后：`node tools/render-harness.cjs` → `failures: []`
+- `node tools/test-v2b.mjs` → 11 passed, 0 failed
+
+
 ## 0.2.0 — 发布门禁修复（2026-11-12 晚）
 
 ### P0 修复（发布阻塞）
