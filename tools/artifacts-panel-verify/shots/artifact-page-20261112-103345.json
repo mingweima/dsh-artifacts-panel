@@ -1,0 +1,72 @@
+{
+  "script": "tools/artifacts-panel-verify/verify.py",
+  "mode": "live",
+  "time": "2026-11-12T10:33:49+08:00",
+  "url": "http://127.0.0.1:/",
+  "viewport": "1440x900",
+  "assertions": [
+    {
+      "id": "A1",
+      "name": "页面就绪",
+      "ok": false,
+      "detail": "等待聊天输入框/侧栏超时"
+    },
+    {
+      "id": "A2",
+      "name": "找到「产物」页签",
+      "ok": false,
+      "detail": "未执行（环境问题）"
+    },
+    {
+      "id": "A3",
+      "name": "面板渲染完成",
+      "ok": false,
+      "detail": "未执行（环境问题）"
+    },
+    {
+      "id": "A4",
+      "name": "页面无明显报错",
+      "ok": false,
+      "detail": "未执行（环境问题）"
+    },
+    {
+      "id": "C1",
+      "name": "测试进程清理",
+      "ok": true,
+      "detail": "本脚本无 Chrome 残留"
+    }
+  ],
+  "console_errors": [],
+  "page": {
+    "title": "127.0.0.1",
+    "text_summary": "This site can’t be reached 127.0.0.1 refused to connect. Try: Checking the connection Checking the proxy and the firewall ERR_CONNECTION_REFUSED Reload Details",
+    "main_text_snippet": "This site can’t be reached 127.0.0.1 refused to connect. Try: Checking the connection Checking the proxy and the firewall ERR_CONNECTION_REFUSED Reload Details",
+    "headings": [
+      "This site can’t be reached"
+    ],
+    "empty_state": false
+  },
+  "screenshot": {
+    "path": "tools/artifacts-panel-verify/shots/artifact-page-20261112-103345.png",
+    "bytes": 28585,
+    "png_size": [
+      1440,
+      900
+    ],
+    "viewport": {
+      "w": 1440,
+      "h": 900
+    }
+  },
+  "cleanup": {
+    "profile_removed": true,
+    "residual_our_processes": 0,
+    "residual_our_detail": [],
+    "global_headless_chrome": 2,
+    "note": "全局 headless 进程数仅供观察，可能包含非本脚本进程；本脚本只统计/回收带自身临时 profile 的进程。"
+  },
+  "env_error": "30s 内页面未就绪（可能仍在加载或地址不对）",
+  "ok": false,
+  "exit_code": 2,
+  "hint": ""
+}

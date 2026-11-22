@@ -1,0 +1,93 @@
+{
+  "generatedAt": "2026-11-22T01:08:41.150Z",
+  "package": {
+    "name": "dsh-artifacts-panel",
+    "version": "0.2.0",
+    "tarball": "dsh-artifacts-panel-0.2.0.tgz",
+    "fileCount": 9,
+    "packedBytes": 108787,
+    "unpackedBytes": 441374,
+    "shasum": "5f892166dcdca3f1b31cc3b61a066d1c2c61868b",
+    "integrity": "sha512-F+xkU6jpmpojNY+/AwYl0kvyRsnQ/Gm6oXVmYVXfHrBpCUN8iiAVsX0vjLDmfdKGoagi4gOG2sfbPKdgYSAJXw=="
+  },
+  "files": [
+    "LICENSE",
+    "README.md",
+    "client.js",
+    "cordis.patch.yml",
+    "icon.svg",
+    "index.js",
+    "locale/en.json",
+    "locale/zh.json",
+    "package.json"
+  ],
+  "sizes": {
+    "LICENSE": 1056,
+    "README.md": 27356,
+    "client.js": 354959,
+    "cordis.patch.yml": 74,
+    "icon.svg": 555,
+    "index.js": 55367,
+    "locale/en.json": 217,
+    "locale/zh.json": 218,
+    "package.json": 1572,
+    "total": 441374
+  },
+  "engines": {
+    "dsh": ">=0.2.2-rc.2 <0.3.0"
+  },
+  "hasPrivate": false,
+  "toolsIncluded": false,
+  "indexDirIncluded": false,
+  "nodeModulesIncluded": false,
+  "userPathHits": [],
+  "placeholders": [],
+  "checks": {
+    "name": true,
+    "version": true,
+    "description": true,
+    "license": true,
+    "author": true,
+    "keywords": true,
+    "repository": true,
+    "homepage": true,
+    "engines": true,
+    "files": true,
+    "exports": true,
+    "dshBundlePatch": true,
+    "dshClient": true,
+    "patchFileExists": true,
+    "patchRowId": true,
+    "patchRowName": true,
+    "clientInject": true,
+    "noLegacyId": true,
+    "indexRoute": true,
+    "optionalInject": true,
+    "schemasteryRange": true,
+    "promptGuidanceDoc": true
+  },
+  "nodeCheck": {
+    "clientJs": 0,
+    "indexJsModule": 0
+  },
+  "npmPack": {
+    "dryRunExit": 0,
+    "fileCount": 9,
+    "files": [
+      "LICENSE",
+      "README.md",
+      "client.js",
+      "cordis.patch.yml",
+      "icon.svg",
+      "index.js",
+      "locale/en.json",
+      "locale/zh.json",
+      "package.json"
+    ]
+  },
+  "problems": [],
+  "blockers": [],
+  "notes": [],
+  "ok": true,
+  "publishReady": true
+}

@@ -1,0 +1,29 @@
+$ cd /Users/mingweima/Documents/SuperDick/release/pkg
+$ npm pack --dry-run
+
+dsh-artifacts-panel-0.2.0.tgz
+
+npm notice 
+npm notice 📦  dsh-artifacts-panel@0.2.0
+npm notice === Tarball Contents === 
+npm notice 1.1kB   LICENSE         
+npm notice 27.4kB  README.md       
+npm notice 355.0kB client.js       
+npm notice 74B     cordis.patch.yml
+npm notice 555B    icon.svg        
+npm notice 55.4kB  index.js        
+npm notice 217B    locale/en.json  
+npm notice 218B    locale/zh.json  
+npm notice 1.6kB   package.json    
+npm notice === Tarball Details === 
+npm notice name:          dsh-artifacts-panel                     
+npm notice version:       0.2.0                                   
+npm notice filename:      dsh-artifacts-panel-0.2.0.tgz           
+npm notice package size:  108.8 kB                                
+npm notice unpacked size: 441.4 kB                                
+npm notice shasum:        5f892166dcdca3f1b31cc3b61a066d1c2c61868b
+npm notice integrity:     sha512-F+xkU6jpmpojN[...]sfbPKdgYSAJXw==
+npm notice total files:   9                                       
+npm notice 
+
+[exit 0]
