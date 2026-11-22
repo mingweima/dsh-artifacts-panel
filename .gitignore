@@ -3,3 +3,10 @@ node_modules/
 *.log
 __pycache__/
 .venv/
+
+# 产物面板插件的生成物：索引里含会话产物的绝对路径，不进仓
+plugins/*/.index/
+# 发布构建输出：由 release/build.mjs 生成，发布记录看 release/verify/
+release/pkg/
+# 会话交接脚手架
+.dsh-switchman/
