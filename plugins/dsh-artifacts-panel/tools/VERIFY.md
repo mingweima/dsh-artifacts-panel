@@ -2,7 +2,7 @@
 
 日期：2026-11-12（Asia/Shanghai）
 包：`@local/dsh-artifacts-panel` 0.1.0
-位置：`/Users/mingweima/Documents/SuperDick/plugins/dsh-artifacts-panel/`
+位置：`plugins/dsh-artifacts-panel/`
 
 ## 1. 安装
 
@@ -58,7 +58,7 @@ cordis_inspect_query platform=client provider=Slots method=listSubTree root=conv
 脚本：`tools/render-harness.cjs`（可重复运行）
 
 ```bash
-cd /Users/mingweima/Documents/SuperDick/plugins/dsh-artifacts-panel
+cd plugins/dsh-artifacts-panel
 node tools/render-harness.cjs            # sample：两轮、回复、文档/图片/文件卡片
 HARNESS_DATA=empty node tools/render-harness.cjs   # 空态
 ```
@@ -113,7 +113,7 @@ plugin_manager action:"remove_bundle" target:"@local/dsh-artifacts-panel"
 ```
 
 卸载会移除 profile 里的 link 依赖与 bundle 选择；源码目录
-`/Users/mingweima/Documents/SuperDick/plugins/dsh-artifacts-panel/` 不会被删除。
+`plugins/dsh-artifacts-panel/` 不会被删除。
 手工兜底（仅在 plugin_manager 不可用时）：删除
 `~/.dsh/profiles/desktop/node_modules/@local/dsh-artifacts-panel` 链接、从 profile `package.json`
 依赖中去掉该包，并在 profile 目录执行 pnpm install —— 不建议绕过 plugin_manager。
@@ -277,7 +277,7 @@ served bundle check OK
 ## 回滚
 
 插件停用/卸载同前。额外：本包 `node_modules/`（仅为 Host Config 的 schemastery 依赖）随插件目录保留；彻底删除时移除整个
-`/Users/mingweima/Documents/SuperDick/plugins/dsh-artifacts-panel/` 即可。
+`plugins/dsh-artifacts-panel/` 即可。
 
 # v3 维度分组 + 子代理卡片 + 测试补齐（2026-11-12 15:30）
 

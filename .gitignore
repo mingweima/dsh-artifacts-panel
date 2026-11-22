@@ -10,3 +10,14 @@ plugins/*/.index/
 release/pkg/
 # 会话交接脚手架
 .dsh-switchman/
+
+# 验收脚本运行产物（每次重新生成）
+tools/artifacts-panel-verify/shots/
+# 打包产物
+*.tgz
+# 一次性简历处理脚本（含第三方个人信息，不入库）
+/annotate_resume_20261116.py
+/build_clean_resume_20261116.py
+/build_tracked_resume_20261116.py
+# worktree 副本
+.agents/worktrees/
