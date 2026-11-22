@@ -1,14 +1,14 @@
 {
-  "generatedAt": "2026-11-22T01:16:30.835Z",
+  "generatedAt": "2026-11-22T01:16:54.268Z",
   "package": {
     "name": "dsh-artifacts-panel",
-    "version": "0.2.0",
-    "tarball": "dsh-artifacts-panel-0.2.0.tgz",
+    "version": "0.2.1",
+    "tarball": "dsh-artifacts-panel-0.2.1.tgz",
     "fileCount": 9,
-    "packedBytes": 109520,
+    "packedBytes": 109519,
     "unpackedBytes": 443781,
-    "shasum": "24ef6be3e36adb26bb426fb6b1571a41d6f07083",
-    "integrity": "sha512-Tfmk+cJsG7z/0j2sWwj+7X+hrmS1jfZnWPd5h8DMF3L0R133URm29NvG1bu3Rjk3P+inn9/6lQi9e8AtHXU24A=="
+    "shasum": "25be6773bb59b44bf5b2772c1b4aa625183ec4d0",
+    "integrity": "sha512-9ee76TNwiIVqfIG0HJ4s2wafDPZ8dlbOZlmhBGdT9kG5F/m3V+SsmP5HAofREMfo3dNWmosuWdEmmhYYKoR0lA=="
   },
   "files": [
     "LICENSE",

@@ -1,0 +1,11 @@
+# npm pack 记录 · dsh-artifacts-panel@0.2.1
+
+- 打包命令：cd release/pkg && npm pack
+- 产物：dsh-artifacts-panel-0.2.1.tgz（留在 release/pkg/，该目录已 gitignore）
+- 文件大小：109,519 B（解包 443.8 kB / 9 个文件）
+- sha256：7d6bb9d506ea013a9124417ef0586287f83121052186256cc8f512db769e76ee
+- npm shasum：25be6773bb59b44bf5b2772c1b4aa625183ec4d0
+- npm integrity：sha512-9ee76TNwiIVqf…dEmmhYYKoR0lA==
+- 打包时间：2026-11-22 09:17（本地，未发布）
+- 发布门禁：release/verify/check.json → publishReady=true、blockers 空、userPathHits 空、hasPrivate=false
+- 未做的两步（需老板本人操作）：npm login（2FA）、npm publish --access public

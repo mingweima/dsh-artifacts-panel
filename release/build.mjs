@@ -11,7 +11,7 @@
  * 环境变量（都可选，默认值见下）：
  *   DEV_PACKAGE        开发包目录，默认 ../plugins/dsh-artifacts-panel
  *   OUT_DIR            输出目录，默认 ./pkg（每次构建前清空）
- *   PKG_VERSION        发布版本，默认 0.2.0
+ *   PKG_VERSION        发布版本，默认取开发包 package.json 的 version
  *   PKG_AUTHOR         author 字段，默认 "mingweima"
  *   PKG_REPO_URL       repository 地址，默认 https://github.com/mingweima/dsh-artifacts-panel
  *   PKG_HOMEPAGE       homepage 地址，默认取 repository + #readme
@@ -31,7 +31,8 @@ const DEV_PACKAGE = path.resolve(process.env.DEV_PACKAGE || path.join(WORKSPACE,
 const OUT_DIR = path.resolve(process.env.OUT_DIR || path.join(HERE, 'pkg'))
 
 const PKG_NAME = 'dsh-artifacts-panel'
-const PKG_VERSION = process.env.PKG_VERSION || '0.2.0'
+// 版本号默认跟随开发包 package.json，避免 dev 版本和发布版本悄悄漂移（P0）；PKG_VERSION 仍可强制覆盖。
+let PKG_VERSION = process.env.PKG_VERSION || ''
 const PKG_AUTHOR = process.env.PKG_AUTHOR || 'mingweima'
 const PKG_REPO_URL = (process.env.PKG_REPO_URL || 'https://github.com/mingweima/dsh-artifacts-panel').replace(/\/+$/, '')
 const PKG_HOMEPAGE = process.env.PKG_HOMEPAGE || PKG_REPO_URL + '#readme'
@@ -342,6 +343,10 @@ async function main() {
   log('输出:   ' + OUT_DIR)
 
   const devPkg = JSON.parse(await fs.readFile(path.join(DEV_PACKAGE, 'package.json'), 'utf8'))
+  if (!PKG_VERSION) PKG_VERSION = String(devPkg.version || '')
+  if (!/^\d+\.\d+\.\d+([-+].+)?$/.test(PKG_VERSION)) {
+    fail('发布版本号取不到或非法（dev package.json version=' + String(devPkg.version) + '，PKG_VERSION=' + PKG_VERSION + '）')
+  }
   if (devPkg.name !== PKG_NAME && devPkg.name !== '@local/' + PKG_NAME) {
     warn('开发包 name 不是预期的 ' + PKG_NAME + '（当前 ' + devPkg.name + '），继续按发布身份构建')
   }
